@@ -10,61 +10,13 @@ st.set_page_config(
 st.markdown("""
 <style>
 .main { max-width: 760px; margin: 0 auto; }
-.domain-header {
-    background: #1a1400;
-    border: 1px solid #854f0b;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-}
-.domain-title { color: #fde68a; font-size: 15px; font-weight: 600; margin-bottom: 2px; }
-.domain-framework { color: #a16207; font-size: 11px; }
-.q-label { font-size: 14px; color: #e5e7eb; line-height: 1.6; margin-bottom: 6px; }
-.score-card {
-    background: #0f172a;
-    border: 1px solid #1e3a5f;
-    border-radius: 8px;
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-    text-align: center;
-}
-.score-big { font-size: 52px; font-weight: 700; margin-bottom: 4px; }
-.tier-1 { color: #f87171; }
-.tier-2 { color: #fbbf24; }
-.tier-3 { color: #60a5fa; }
-.tier-4 { color: #34d399; }
-.domain-score-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 6px 0;
-    border-bottom: 1px solid #1e293b;
-    font-size: 13px;
-}
-.ai-report {
-    background: #0a1628;
-    border: 1px solid #1e3a5f;
-    border-radius: 8px;
-    padding: 1.25rem;
-    margin-top: 1rem;
-    font-size: 14px;
-    line-height: 1.8;
-    color: #cbd5e1;
-}
-.framework-footer {
-    text-align: center;
-    font-size: 11px;
-    color: #4b5563;
-    margin-top: 2rem;
-    padding-top: 1rem;
-    border-top: 1px solid #1e293b;
-}
 .brand-footer {
     text-align: center;
     font-size: 12px;
-    color: #4b5563;
+    color: #6b7280;
     margin-top: 3rem;
     padding-top: 1.5rem;
-    border-top: 1px solid #1e293b;
+    border-top: 1px solid #e5e7eb;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -127,18 +79,52 @@ DOMAINS = [
     }
 ]
 
-ANS_OPTIONS = {"Yes": 2, "Partial": 1, "No": 0}
+ANS_OPTIONS = ["Yes", "Partial", "No"]
+ANS_POINTS = {"Yes": 2, "Partial": 1, "No": 0}
 
 TIER_INFO = {
-    1: {"label": "Foundational", "color": "tier-1", "emoji": "🔴",
+    1: {"label": "Foundational", "emoji": "🔴",
         "desc": "Significant gaps across critical domains. Immediate action required before expanding AI in operational environments."},
-    2: {"label": "Developing", "color": "tier-2", "emoji": "🟡",
+    2: {"label": "Developing", "emoji": "🟡",
         "desc": "Key controls in place but major gaps remain. Prioritize regulatory alignment and vendor risk management."},
-    3: {"label": "Managed", "color": "tier-3", "emoji": "🔵",
+    3: {"label": "Managed", "emoji": "🔵",
         "desc": "Solid governance foundation with targeted improvements needed. Focus on incident response maturity."},
-    4: {"label": "Optimized", "color": "tier-4", "emoji": "🟢",
+    4: {"label": "Optimized", "emoji": "🟢",
         "desc": "Strong AI governance posture. Focus on continuous improvement and framework updates as AI evolves."}
 }
+
+def init_state():
+    if "phase" not in st.session_state:
+        st.session_state.phase = "questions"
+    if "current_domain" not in st.session_state:
+        st.session_state.current_domain = 0
+    if "answers" not in st.session_state:
+        st.session_state.answers = {}
+    if "report" not in st.session_state:
+        st.session_state.report = None
+
+def get_answer(domain_id, q_idx):
+    return st.session_state.answers.get(f"{domain_id}_{q_idx}", None)
+
+def set_answer(domain_id, q_idx, value):
+    st.session_state.answers[f"{domain_id}_{q_idx}"] = value
+
+def domain_answered_count(domain_id):
+    return sum(1 for i in range(3) if get_answer(domain_id, i) is not None)
+
+def domain_score(domain_id):
+    total = 0
+    for i in range(3):
+        ans = get_answer(domain_id, i)
+        if ans:
+            total += ANS_POINTS[ans]
+    return total
+
+def total_answered():
+    return sum(domain_answered_count(d["id"]) for d in DOMAINS)
+
+def all_answered():
+    return total_answered() == 15
 
 def get_tier(score):
     if score <= 6: return 1
@@ -146,31 +132,13 @@ def get_tier(score):
     if score <= 14: return 3
     return 4
 
-def get_domain_score(domain_id):
-    total = 0
-    for i in range(3):
-        key = f"d{domain_id}_q{i}"
-        ans = st.session_state.get(key, None)
-        if ans:
-            total += ANS_OPTIONS[ans]
-    return total
-
-def all_answered():
-    for d in DOMAINS:
-        for i in range(3):
-            if not st.session_state.get(f"d{d['id']}_q{i}"):
-                return False
-    return True
-
 def generate_report(total_score, domain_scores):
     tier = get_tier(total_score)
     tier_label = TIER_INFO[tier]["label"]
-
     domain_summary = "; ".join([
         f"{DOMAINS[i]['name']}: {domain_scores[i]}/6 ({'critical gap' if domain_scores[i]<=2 else 'partial coverage' if domain_scores[i]<=4 else 'strong'})"
         for i in range(5)
     ])
-
     weakest = sorted(range(5), key=lambda i: domain_scores[i])[:2]
     weakest_names = " and ".join([DOMAINS[i]["name"] for i in weakest])
 
@@ -198,14 +166,6 @@ Be direct and specific. No filler. No generic advice. Write as a senior consulta
         )
     return message.content[0].text
 
-def init_state():
-    if "phase" not in st.session_state:
-        st.session_state.phase = "questions"
-    if "report" not in st.session_state:
-        st.session_state.report = None
-    if "current_domain" not in st.session_state:
-        st.session_state.current_domain = 0
-
 def main():
     init_state()
 
@@ -217,15 +177,16 @@ def main():
         show_results()
         return
 
-    answered_count = sum(1 for d in DOMAINS for i in range(3) if st.session_state.get(f"d{d['id']}_q{i}"))
-    st.progress(answered_count / 15, text=f"{answered_count} of 15 questions answered")
+    # Progress
+    answered = total_answered()
+    st.progress(answered / 15, text=f"{answered} of 15 questions answered")
 
-    domain_cols = st.columns(5)
+    # Domain status indicators
+    cols = st.columns(5)
     for i, d in enumerate(DOMAINS):
-        domain_score = get_domain_score(d["id"])
-        answered_in_domain = sum(1 for j in range(3) if st.session_state.get(f"d{d['id']}_q{j}"))
-        with domain_cols[i]:
-            if answered_in_domain == 3:
+        cnt = domain_answered_count(d["id"])
+        with cols[i]:
+            if cnt == 3:
                 st.markdown(f"✅ **{d['short']}**")
             elif i == st.session_state.current_domain:
                 st.markdown(f"▶️ **{d['short']}**")
@@ -235,23 +196,41 @@ def main():
     st.divider()
 
     d = DOMAINS[st.session_state.current_domain]
-
     st.markdown(f"### Domain {d['id']+1} of 5 — {d['name']}")
     st.caption(f"Framework: {d['framework']}")
+    st.markdown("")
 
+    # Render each question with explicit answer storage
     for i, q in enumerate(d["questions"]):
-        key = f"d{d['id']}_q{i}"
         st.markdown(f"**{i+1}. {q}**")
-        st.radio(
-            f"q_{d['id']}_{i}",
-            options=["Yes", "Partial", "No"],
-            key=key,
-            horizontal=True,
-            index=None,
-            label_visibility="collapsed"
-        )
+        current_ans = get_answer(d["id"], i)
+        current_idx = ANS_OPTIONS.index(current_ans) if current_ans else None
+
+        col_yes, col_partial, col_no, col_spacer = st.columns([1, 1, 1, 3])
+
+        with col_yes:
+            yes_style = "primary" if current_ans == "Yes" else "secondary"
+            if st.button("Yes", key=f"yes_{d['id']}_{i}", type=yes_style, use_container_width=True):
+                set_answer(d["id"], i, "Yes")
+                st.rerun()
+
+        with col_partial:
+            partial_style = "primary" if current_ans == "Partial" else "secondary"
+            if st.button("Partial", key=f"partial_{d['id']}_{i}", type=partial_style, use_container_width=True):
+                set_answer(d["id"], i, "Partial")
+                st.rerun()
+
+        with col_no:
+            no_style = "primary" if current_ans == "No" else "secondary"
+            if st.button("No", key=f"no_{d['id']}_{i}", type=no_style, use_container_width=True):
+                set_answer(d["id"], i, "No")
+                st.rerun()
+
+        if current_ans:
+            st.caption(f"✓ Answered: {current_ans}")
         st.markdown("")
 
+    # Navigation
     col1, col2, col3 = st.columns([1, 1, 1])
 
     with col1:
@@ -269,13 +248,9 @@ def main():
     with col3:
         if all_answered():
             if st.button("See my results →", type="primary", use_container_width=True):
-                domain_scores = [get_domain_score(d["id"]) for d in DOMAINS]
-                total = sum(domain_scores)
-                st.session_state.report = generate_report(total, domain_scores)
-                st.session_state.phase = "results"
-                st.rerun()
-        elif answered_count == 15:
-            if st.button("See my results →", type="primary", use_container_width=True):
+                d_scores = [domain_score(d["id"]) for d in DOMAINS]
+                total = sum(d_scores)
+                st.session_state.report = generate_report(total, d_scores)
                 st.session_state.phase = "results"
                 st.rerun()
 
@@ -283,7 +258,7 @@ def main():
 
 
 def show_results():
-    domain_scores = [get_domain_score(d["id"]) for d in DOMAINS]
+    domain_scores = [domain_score(d["id"]) for d in DOMAINS]
     total = sum(domain_scores)
     tier_num = get_tier(total)
     tier = TIER_INFO[tier_num]
@@ -291,18 +266,12 @@ def show_results():
     st.markdown(f"## {tier['emoji']} Your results")
 
     col1, col2 = st.columns([1, 2])
-
     with col1:
-        st.markdown(f"""
-<div class="score-card">
-  <div class="score-big {tier['color']}">{total}</div>
-  <div style="font-size:14px;color:#94a3b8">out of 30</div>
-  <div style="font-size:13px;font-weight:600;color:#e5e7eb;margin-top:8px">Tier {tier_num} — {tier['label']}</div>
-</div>
-""", unsafe_allow_html=True)
+        st.metric("Overall score", f"{total} / 30")
+        st.markdown(f"**Tier {tier_num} — {tier['label']}**")
 
     with col2:
-        st.markdown(f"**{tier['label']}** — {tier['desc']}")
+        st.markdown(tier["desc"])
         st.markdown("")
         for i, d in enumerate(DOMAINS):
             s = domain_scores[i]
@@ -313,18 +282,14 @@ def show_results():
 
     if st.session_state.report:
         st.markdown("### Personalized gap analysis")
-        st.markdown('<div class="ai-report">', unsafe_allow_html=True)
         for para in st.session_state.report.split("\n\n"):
             if para.strip():
                 st.markdown(para)
-        st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown("")
 
     st.divider()
 
-    st.markdown("""
-This assessment is based on publicly available frameworks including IEC 62443, NERC CIP, NIST CSF 2.0, ISO/IEC 42001, and NIST AI RMF.
-It provides a directional snapshot of your AI governance posture — not a formal audit or compliance certification.
-""")
+    st.caption("This assessment is based on IEC 62443, NERC CIP, NIST CSF 2.0, ISO/IEC 42001, and NIST AI RMF. It provides a directional snapshot — not a formal audit or compliance certification.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -334,7 +299,7 @@ It provides a directional snapshot of your AI governance posture — not a forma
             st.rerun()
     with col2:
         if st.button("Book a consultation →", use_container_width=True):
-            st.markdown("[jdmcservices.com](https://jdmcservices.com)")
+            st.markdown("Visit [jdmcservices.com](https://jdmcservices.com)")
 
     st.markdown('<div class="brand-footer">JDMC Services · AI Governance for Regulated Industries · jdmcservices.com<br>IEC 62443 · NERC CIP · NIST CSF 2.0 · ISO/IEC 42001 · NIST AI RMF</div>', unsafe_allow_html=True)
 
