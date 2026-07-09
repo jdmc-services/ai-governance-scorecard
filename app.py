@@ -339,9 +339,17 @@ def get_domains():
     return []
 
 def get_tier(score):
-    if score <= 6: return 1
-    if score <= 10: return 2
-    if score <= 14: return 3
+    # Score range is 0-30 (15 questions x 2 points max).
+    # Tier bands (FIX 2026-07-08): previous thresholds (6/10/14) were scaled
+    # for a smaller range and sent every score of 15+ to Tier 4, so mid-range
+    # results displayed as "Optimized". Corrected bands:
+    #   Tier 1 Foundational: 0-12   (<= 40%)
+    #   Tier 2 Developing:  13-19   (41-64%)
+    #   Tier 3 Managed:     20-25   (65-84%)
+    #   Tier 4 Optimized:   26-30   (>= 85%)
+    if score <= 12: return 1
+    if score <= 19: return 2
+    if score <= 25: return 3
     return 4
 
 def generate_report(total_score, domain_scores):
